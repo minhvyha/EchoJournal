@@ -20,7 +20,7 @@ export default function Home() {
   const [sentiment, setSentiment] = useState<"positive" | "neutral" | "reflective">("neutral")
   const [entries, setEntries] = useState<Entry[]>([])
   const [isLoading, setIsLoading] = useState(true)
-
+  
   // Worker Reference
   const worker = useRef<Worker | null>(null)
 
@@ -41,7 +41,7 @@ export default function Home() {
     }
 
     worker.current.addEventListener("message", onMessageReceived)
-
+    
     // Load local storage
     const saved = localStorage.getItem("echojournal-entries")
     if (saved) setEntries(JSON.parse(saved))
@@ -75,7 +75,7 @@ export default function Home() {
     recognition.interimResults = false
 
     recognition.onstart = () => setIsRecording(true)
-
+    
     recognition.onresult = (event: any) => {
       const text = event.results[0][0].transcript
       setTranscription(text)
@@ -124,40 +124,8 @@ export default function Home() {
 
       {/* Main Content */}
       <div className="w-full max-w-md space-y-8">
-        {/* Recording area with bubble wrapper */}
         <div className="flex justify-center">
-          <div className="relative flex items-center justify-center">
-            {/* Bubble that appears above the record button */}
-            {transcription && (
-              <div className="absolute bottom-full mb-3 left-1/2 transform -translate-x-1/2 z-20">
-                <div className="min-w-[180px] max-w-xs bg-white border border-slate-200 shadow-lg rounded-2xl p-3 text-sm leading-tight transition duration-150 ease-out">
-                  <div className="flex items-start gap-2">
-                    <div className="flex-1 break-words">{transcription}</div>
-                    <button
-                      onClick={handleClearTranscription}
-                      aria-label="Clear transcription"
-                      className="ml-3 text-slate-400 hover:text-slate-600 text-lg leading-none"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  {/* optional row for sentiment + actions */}
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <SentimentIndicator sentiment={sentiment} />
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" onClick={handleSaveEntry} className="rounded-full" aria-label="Save entry">
-                        Save
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-                {/* Tail */}
-                <div className="absolute left-1/2 transform -translate-x-1/2 -translate-y-1 w-3 h-3 bg-white rotate-45 border-l border-t border-slate-200 shadow-sm" />
-              </div>
-            )}
-
-            <RecordButton isRecording={isRecording} onClick={handleRecord} />
-          </div>
+          <RecordButton isRecording={isRecording} onClick={handleRecord} />
         </div>
 
         {transcription && <SentimentIndicator sentiment={sentiment} />}
