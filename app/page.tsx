@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import EntryList from "@/components/entry-list"
@@ -21,56 +21,72 @@ export default function Home() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
-  // Load entries from local storage on mount
+  // Worker Reference
+  const worker = useRef<Worker | null>(null)
+
+  // 1. Initialize Worker and Speech Recognition
   useEffect(() => {
-    const saved = localStorage.getItem("echojournal-entries")
-    if (saved) {
-      setEntries(JSON.parse(saved))
+    if (!worker.current) {
+      worker.current = new Worker(new URL("./worker.js", import.meta.url), {
+        type: "module",
+      })
     }
+
+    const onMessageReceived = (e: MessageEvent) => {
+      if (e.data.status === "complete") {
+        const label = e.data.output.label // POSITIVE or NEGATIVE
+        // Map ML labels to your UI's sentiment types
+        setSentiment(label === "POSITIVE" ? "positive" : "reflective")
+      }
+    }
+
+    worker.current.addEventListener("message", onMessageReceived)
+
+    // Load local storage
+    const saved = localStorage.getItem("echojournal-entries")
+    if (saved) setEntries(JSON.parse(saved))
     setIsLoading(false)
+
+    return () => worker.current?.removeEventListener("message", onMessageReceived)
   }, [])
 
-  // Save entries to local storage whenever they change
+  // 2. Persistent Storage
   useEffect(() => {
     if (!isLoading) {
       localStorage.setItem("echojournal-entries", JSON.stringify(entries))
     }
   }, [entries, isLoading])
 
-  const mockSentimentDetection = (text: string) => {
-    const positiveWords = ["happy", "great", "wonderful", "amazing", "love", "excellent", "good", "best"]
-    const reflectiveWords = ["think", "realize", "understand", "feel", "wonder", "consider", "reflect", "ponder"]
-
-    const lowerText = text.toLowerCase()
-
-    if (positiveWords.some((word) => lowerText.includes(word))) {
-      return "positive"
-    }
-    if (reflectiveWords.some((word) => lowerText.includes(word))) {
-      return "reflective"
-    }
-    return "neutral"
-  }
-
+  // 3. Real Speech Recognition Logic
   const handleRecord = () => {
-    setIsRecording(!isRecording)
-
-    if (!isRecording) {
-      // Simulate recording - in a real app, this would use Web Audio API
-      setTimeout(() => {
-        const mockTranscriptions = [
-          "I had a wonderful day today. Really feeling grateful for everything.",
-          "Thinking about my life and where I want to go. It feels important to reflect on these things.",
-          "Nothing much happened, just another regular day.",
-          "I love how things are coming together. Amazing progress!",
-        ]
-        const randomTranscription = mockTranscriptions[Math.floor(Math.random() * mockTranscriptions.length)]
-        setTranscription(randomTranscription)
-        const detectedSentiment = mockSentimentDetection(randomTranscription) as "positive" | "neutral" | "reflective"
-        setSentiment(detectedSentiment)
-        setIsRecording(false)
-      }, 2000)
+    if (isRecording) {
+      setIsRecording(false)
+      return
     }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      alert("Browser does not support speech recognition.")
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognition.continuous = false
+    recognition.interimResults = false
+
+    recognition.onstart = () => setIsRecording(true)
+
+    recognition.onresult = (event: any) => {
+      const text = event.results[0][0].transcript
+      setTranscription(text)
+      // Send to Worker for ML analysis
+      worker.current?.postMessage({ text })
+    }
+
+    recognition.onerror = () => setIsRecording(false)
+    recognition.onend = () => setIsRecording(false)
+
+    recognition.start()
   }
 
   const handleSaveEntry = () => {
@@ -102,51 +118,69 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 flex flex-col items-center justify-center px-4 py-8">
       {/* Header */}
       <div className="mb-12 text-center">
-        <h1 className="text-sm font-light tracking-widest text-slate-400 uppercase">EchoJournal</h1>
-        <p className="text-xs text-slate-500 mt-2">Your voice, your thoughts, your sentiments</p>
+        <h1 className="text-2xl font-light tracking-widest text-slate-400 uppercase">EchoJournal</h1>
+        <p className="text-slate-500 mt-2">Your voice, your thoughts, your sentiments</p>
       </div>
 
-      {/* Main Content Container */}
+      {/* Main Content */}
       <div className="w-full max-w-md space-y-8">
-        {/* Record Button */}
+        {/* Recording area with bubble wrapper */}
         <div className="flex justify-center">
-          <RecordButton isRecording={isRecording} onClick={handleRecord} />
+          <div className="relative flex items-center justify-center">
+            {/* Bubble that appears above the record button */}
+            {transcription && (
+              <div className="absolute bottom-full mb-3 left-1/2 transform -translate-x-1/2 z-20">
+                <div className="min-w-[180px] max-w-xs bg-white border border-slate-200 shadow-lg rounded-2xl p-3 text-sm leading-tight transition duration-150 ease-out">
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 break-words">{transcription}</div>
+                    <button
+                      onClick={handleClearTranscription}
+                      aria-label="Clear transcription"
+                      className="ml-3 text-slate-400 hover:text-slate-600 text-lg leading-none"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {/* optional row for sentiment + actions */}
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <SentimentIndicator sentiment={sentiment} />
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" onClick={handleSaveEntry} className="rounded-full" aria-label="Save entry">
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                {/* Tail */}
+                <div className="absolute left-1/2 transform -translate-x-1/2 -translate-y-1 w-3 h-3 bg-white rotate-45 border-l border-t border-slate-200 shadow-sm" />
+              </div>
+            )}
+
+            <RecordButton isRecording={isRecording} onClick={handleRecord} />
+          </div>
         </div>
 
-        {/* Sentiment Indicator */}
         {transcription && <SentimentIndicator sentiment={sentiment} />}
 
-        {/* Transcription Area */}
         <Card className="bg-white border-0 shadow-sm p-6">
           <p className="text-sm text-slate-500 leading-relaxed">
             {transcription || "Your thoughts will appear here..."}
           </p>
         </Card>
 
-        {/* Action Buttons */}
         {transcription && (
           <div className="flex gap-3 justify-center">
-            <Button
-              onClick={handleSaveEntry}
-              className="bg-slate-900 hover:bg-slate-800 text-white text-sm h-10 px-6 rounded-full"
-            >
+            <Button onClick={handleSaveEntry} className="bg-slate-900 hover:bg-slate-800 text-white rounded-full">
               Save Entry
             </Button>
-            <Button
-              onClick={handleClearTranscription}
-              variant="outline"
-              className="text-slate-600 border-slate-300 hover:bg-slate-50 text-sm h-10 px-6 rounded-full bg-transparent"
-            >
+            <Button onClick={handleClearTranscription} variant="outline" className="rounded-full">
               Clear
             </Button>
           </div>
         )}
-
-        {/* Divider */}
-        {entries.length > 0 && <div className="h-px bg-slate-200" />}
       </div>
 
-      {/* Previous Entries */}
+      {/* Entries List */}
       {entries.length > 0 && (
         <div className="w-full max-w-md mt-12">
           <h2 className="text-sm font-light tracking-widest text-slate-400 uppercase mb-6">Previous Entries</h2>
