@@ -21,7 +21,7 @@ const mapLabelToSentiment = (label) => {
 self.onmessage = async (e) => {
   try {
     if (!classifier) {
-      // Use the ONNX repo which contains model_quantized.onnx
+      // instantiate classifier once
       classifier = await pipeline(
         "text-classification",
         "SamLowe/roberta-base-go_emotions-onnx"
@@ -30,19 +30,19 @@ self.onmessage = async (e) => {
 
     const text = typeof e.data === "object" && e.data.text ? String(e.data.text) : String(e.data);
 
-    // This model is multi-label. The pipeline returns an array of { label, score }.
-    const result = await classifier(text);
-    console.log(result)
+    // Ask the pipeline to return all labels and scores
+    // for a single input pass top_k: null
+    const result = await classifier(text, { top_k: null });
 
-    // If result is an array of scores, pick highest score as top label
-    const top = Array.isArray(result) ? result.reduce((a, b) => (b.score > a.score ? b : a), result[0]) : result;
+    // result should be an array of { label, score } for single input
+    const top = Array.isArray(result) && result.length ? result.reduce((a, b) => (b.score > a.score ? b : a), result[0]) : null;
 
-    const sentiment = mapLabelToSentiment(top.label);
+    const sentiment = top ? mapLabelToSentiment(top.label) : "reflective";
 
     self.postMessage({
       status: "complete",
       output: {
-        top,           // selected top { label, score }
+        top,           // highest scoring { label, score }
         all: result,   // full array of { label, score }
         sentiment      // "positive" | "neutral" | "reflective"
       }
