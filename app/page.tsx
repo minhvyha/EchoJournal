@@ -33,12 +33,17 @@ export default function Home() {
     }
 
     const onMessageReceived = (e: MessageEvent) => {
-      if (e.data.status === "complete") {
-        const label = e.data.output.label // POSITIVE or NEGATIVE
-        // Map ML labels to your UI's sentiment types
-        setSentiment(label === "POSITIVE" ? "positive" : "reflective")
-      }
-    }
+      console.log("Message from worker:", e.data);
+  if (e.data.status === "complete") {
+    // e.data.output.sentiment will be "positive" | "neutral" | "reflective"
+    const sentimentFromModel = e.data.output?.sentiment ?? "reflective";
+    setSentiment(sentimentFromModel);
+    // If you want extra debugging info:
+    console.log("ML top label:", e.data.output.top, "all:", e.data);
+  } else if (e.data.status === "error") {
+    console.error("Worker error:", e.data.error);
+  }
+};
 
     worker.current.addEventListener("message", onMessageReceived)
     
