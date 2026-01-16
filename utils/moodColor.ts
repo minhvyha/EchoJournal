@@ -88,6 +88,34 @@ export function moodsToGradient(moods: Mood[], direction = "to right") {
   return `linear-gradient(${direction}, ${stops.join(", ")})`
 }
 
+export function moodsToLightGradient(moods: Mood[], angle = 45, lightnessBoost = 15) {
+  const top = moods.slice(0, 3)
+  if (top.length === 0) return hslToString(210, 8, 80)
+
+  if (top.length === 1) {
+    const { h, s, l } = getBaseHSL(top[0].label)
+    return hslToString(h, Math.max(s - 10, 20), Math.min(l + lightnessBoost, 85))
+  }
+
+  const sumW = top.reduce((s, m) => s + m.score, 0) || 1
+  let accum = 0
+  const stops: string[] = []
+
+  for (const m of top) {
+    const w = m.score / sumW
+    const { h, s, l } = getBaseHSL(m.label)
+    // Lighter and less saturated colors
+    const color = hslToString(h, Math.max(s - 10, 20), Math.min(l + lightnessBoost, 85))
+    const start = Math.round(accum * 100)
+    accum += w
+    const end = Math.round(accum * 100)
+    stops.push(`${color} ${start}%`)
+    stops.push(`${color} ${end}%`)
+  }
+
+  return `linear-gradient(${angle}deg, ${stops.join(", ")})`
+}
+
 /* helpers for accessibility */
 
 // convert HSL to RGB (values 0..255)
@@ -96,8 +124,7 @@ export function hslToRgb(h: number, s: number, l: number) {
   l /= 100
   const k = (n: number) => (n + h / 30) % 12
   const a = s * Math.min(l, 1 - l)
-  const f = (n: number) =>
-    l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
   const r = Math.round(255 * f(0))
   const g = Math.round(255 * f(8))
   const b = Math.round(255 * f(4))
